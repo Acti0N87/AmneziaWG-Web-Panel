@@ -8,10 +8,16 @@
       - amneziawg_device is match('^[a-zA-Z0-9_.-]+$')
       - amneziawg_port | int > 1024
       - amneziawg_port | int < 65536
-      - amneziawg_ui_port | int > 1024
-      - amneziawg_ui_port | int < 65536
-      - amneziawg_ui_public is boolean
     fail_msg: This playbook supports Ubuntu 24.04 amd64; review other platforms before extending it.
+
+- name: Validate admin panel settings
+  ansible.builtin.assert:
+    that:
+      - amneziawg_ui_port is integer
+      - amneziawg_ui_port >= 1
+      - amneziawg_ui_port <= 65535
+      - amneziawg_ui_public is boolean
+    fail_msg: Set amneziawg_ui_port to an integer from 1 to 65535 and amneziawg_ui_public to a boolean.
 
 - name: Inspect installed packages
   ansible.builtin.package_facts:

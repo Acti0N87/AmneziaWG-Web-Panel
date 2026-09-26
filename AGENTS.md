@@ -14,6 +14,9 @@
   `amneziawg_ui_public: true`; keep password authentication enabled in both modes.
   Document that the flag does not enable TLS. Turning it off must remove the
   managed TCP rule and restore loopback binding.
+- Admin port is `amneziawg_ui_port`, an integer from 1 to 65535 (default 51821).
+  Check the new port is free before changing a live deployment; verify both
+  the new listener and removal of the old managed port rule.
 - Do not flush firewall rules, change SSH rules, perform full OS upgrades or reboot
   as part of this installer. Only touch rules labelled `amneziawg-ansible`.
 - Keep persistent VPN data on rollback. Follow the README stop procedure.

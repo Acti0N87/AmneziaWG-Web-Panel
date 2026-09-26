@@ -111,6 +111,30 @@ before applying elsewhere. Provider firewalls must permit UDP 51820 and SSH.
 
 ## Open the panel
 
+Set `amneziawg_ui_port` under the target host in `inventory.local.yml` to select
+any TCP port from **1 to 65535** (YAML integer). The default is **51821**.
+For public access on port 80:
+
+```yaml
+amneziawg_ui_public: true
+amneziawg_ui_port: 80
+```
+
+```sh
+.venv/bin/ansible-playbook -i inventory.local.yml playbook.yml
+```
+
+Then open `http://vpn-server.example/`. Ensure the selected port is not already
+used by another service. Changing it updates the listener and managed firewall
+rule, removing the old port's managed rule. The container briefly restarts;
+password and client data are retained. To revert, restore the previous port and
+reapply. Port 80 serves HTTP; choosing port 443 would not enable TLS.
+
+The examples below use the default port. Substitute your configured port in
+panel URLs, SSH tunnel destinations, health checks and provider firewall rules.
+For a private panel on port 80, a tunnel can keep local port 51821:
+`ssh -N -L 51821:127.0.0.1:80 root@vpn-server.example`.
+
 By default (`amneziawg_ui_public: false`), the panel serves HTTP on
 **127.0.0.1:51821**. Access it through SSH:
 
@@ -149,6 +173,12 @@ For a one-off override, use a JSON boolean:
 
 ```sh
 .venv/bin/ansible-playbook -i inventory.local.yml playbook.yml -e '{"amneziawg_ui_public": true}'
+```
+
+To override both settings for one deployment:
+
+```sh
+.venv/bin/ansible-playbook -i inventory.local.yml playbook.yml -e '{"amneziawg_ui_public": true, "amneziawg_ui_port": 80}'
 ```
 
 To make the panel private again, set `amneziawg_ui_public: false` in the local
