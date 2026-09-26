@@ -89,6 +89,7 @@ add the local inventory. For multiple servers, use additional aliases under
 ssh root@vpn-server.example true
 .venv/bin/ansible -i inventory.local.yml vpn -m ansible.builtin.ping
 .venv/bin/ansible-lint
+.venv/bin/python -m unittest discover -s tests -v
 .venv/bin/ansible-playbook playbook.yml --syntax-check
 .venv/bin/ansible-playbook -i inventory.local.yml playbook.yml --check --diff
 .venv/bin/ansible-playbook -i inventory.local.yml playbook.yml
@@ -107,7 +108,35 @@ Defaults are in `roles/amneziawg/defaults/main.yml`. Override endpoint, external
 interface or ports in inventory/group variables. The VPN subnet is `10.8.0.0/24`;
 check for overlapping networks before using it on another server. This deployment
 was designed for a clean host; inspect existing VPNs, containers and firewalls
-before applying elsewhere. Provider firewalls must permit UDP 51820 and SSH.
+before applying elsewhere. Provider firewalls must permit the configured VPN UDP
+port (`amneziawg_port`, default 51820) and SSH.
+
+## Configure the VPN UDP port
+
+Set `amneziawg_port` under the target host in your ignored inventory. It accepts
+an integer from **1 to 65535**, including privileged ports such as 53 and 443:
+
+```yaml
+amneziawg_port: 443
+```
+
+```sh
+.venv/bin/ansible-playbook -i inventory.local.yml playbook.yml
+```
+
+The VPN uses UDP, independently of nginx's TCP port. VPN UDP 443 and nginx TCP
+443 can run together. UDP 53 is supported only when available: a local DNS
+resolver bound even to a loopback address can conflict with the VPN's wildcard
+listener. The playbook checks for conflicting UDP sockets before changing the
+firewall or container and refuses to stop or reconfigure another service.
+
+A port change recreates the VPN container and briefly interrupts connections.
+Server listening port, newly exported client endpoints and managed firewall rules
+use the same setting. **Existing imported clients must update their Endpoint port
+or download/re-import their configuration from the panel.** Update provider
+firewall rules too. To undo a change, restore the previous `amneziawg_port`, reapply,
+and restore client endpoint ports. Changing a port does not make VPN packets into
+DNS or HTTPS traffic.
 
 ## Open the panel privately
 
@@ -195,10 +224,16 @@ publication changes do not restart the VPN container.
 nginx terminates TLS 1.2/1.3 and sets Secure, HttpOnly, SameSite=Lax session cookies
 when HTTPS is enabled. There is no public plaintext listener or HTTP redirect.
 The playbook creates a 3072-bit RSA key and a self-signed certificate valid for
-365 days. It covers `amneziawg_host` (the configured VPN endpoint) and localhost,
+365 days. Subject and issuer use the neutral name `Restricted`; neither names
+AmneziaWG. It covers `amneziawg_host` (the configured VPN endpoint) and localhost,
 including IP SANs for numeric addresses. Update `amneziawg_host` and reapply when
 changing the address. TLS files remain under `/opt/amneziawg/tls` outside the image
 build context; the panel container has no TLS key or certificate mount.
+
+Upgrading from the old branded certificate reissues it with the neutral name,
+preserving the private key and endpoint SANs. nginx reloads the replacement;
+refresh any explicit browser/client trust of the old self-signed certificate.
+Future automatic renewals retain the neutral name from the updated CSR.
 
 Browsers show a trust warning until you explicitly trust the self-signed
 certificate. Retrieve only the public certificate over verified SSH and check its

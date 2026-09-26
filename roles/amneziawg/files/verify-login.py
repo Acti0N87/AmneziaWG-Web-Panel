@@ -3,6 +3,7 @@ import base64
 import http.cookiejar
 import json
 from pathlib import Path
+import re
 import sys
 import ssl
 import urllib.error
@@ -69,5 +70,11 @@ if scheme == 'https':
 with client.open(base + "/api/session", timeout=10) as response:
     assert json.load(response)["authenticated"] is True
 with client.open(base + "/api/wireguard/client", timeout=10) as response:
-    assert isinstance(json.load(response), list), "Authenticated client API failed"
+    clients = json.load(response)
+    assert isinstance(clients, list), "Authenticated client API failed"
+if len(sys.argv) > 5 and clients:
+    # Inspect only the endpoint port in memory; never print a client config/key.
+    with client.open(base + '/api/wireguard/client/' + clients[0]['id'] + '/configuration', timeout=10) as response:
+        endpoint = re.search(r'^Endpoint\s*=.*:(\d+)\s*$', response.read().decode(), re.MULTILINE)
+        assert endpoint and int(endpoint.group(1)) == int(sys.argv[5]), 'Exported VPN endpoint port is incorrect'
 print("Invalid password rejected; authenticated session and client API verified")

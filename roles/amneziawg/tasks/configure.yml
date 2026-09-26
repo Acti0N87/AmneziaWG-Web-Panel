@@ -1,4 +1,13 @@
 ---
+- name: Check VPN UDP port ownership before migration
+  ansible.builtin.command:
+    argv:
+      - python3
+      - '-c'
+      - "{{ lookup('ansible.builtin.file', 'check-udp-port.py') }}"
+      - "{{ amneziawg_port | string }}"
+  changed_when: false
+
 - name: Check backend and public port ownership before migration
   ansible.builtin.command:
     argv: >-
@@ -127,6 +136,7 @@
       WG_HOST: "{{ amneziawg_host }}"
       WG_DEVICE: "{{ amneziawg_device }}"
       WG_PORT: "{{ amneziawg_port | string }}"
+      WG_CONFIG_PORT: "{{ amneziawg_port | string }}"
       WEBUI_HOST: "127.0.0.1"
       PORT: '51821'
       PASSWORD_HASH: "{{ amneziawg_password_hash.content | b64decode | trim }}"
@@ -178,6 +188,8 @@
       - "{{ amneziawg_directory }}"
       - '51821'
       - http
+      - direct
+      - "{{ amneziawg_port | string }}"
   changed_when: false
   no_log: true
 

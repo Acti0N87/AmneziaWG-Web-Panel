@@ -122,6 +122,7 @@
           - "{{ amneziawg_nginx_port | string }}"
           - "{{ amneziawg_nginx_scheme }}"
           - proxy
+          - "{{ amneziawg_port | string }}"
       changed_when: false
       no_log: true
 

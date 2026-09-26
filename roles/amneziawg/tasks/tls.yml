@@ -21,7 +21,7 @@
   community.crypto.openssl_csr:
     path: "{{ amneziawg_directory }}/tls/request.pem"
     privatekey_path: "{{ amneziawg_directory }}/tls/key.pem"
-    common_name: AmneziaWG admin panel
+    common_name: Restricted
     use_common_name_for_san: false
     subject_alt_name:
       - IP:127.0.0.1

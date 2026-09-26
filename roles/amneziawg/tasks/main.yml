@@ -6,9 +6,15 @@
       - ansible_facts['distribution_version'] == '24.04'
       - ansible_facts['architecture'] == 'x86_64'
       - amneziawg_device is match('^[a-zA-Z0-9_.-]+$')
-      - amneziawg_port | int > 1024
-      - amneziawg_port | int < 65536
     fail_msg: This playbook supports Ubuntu 24.04 amd64; review other platforms before extending it.
+
+- name: Validate VPN UDP port
+  ansible.builtin.assert:
+    that:
+      - amneziawg_port is integer
+      - amneziawg_port >= 1
+      - amneziawg_port <= 65535
+    fail_msg: Set amneziawg_port to an integer from 1 to 65535; the UDP port must be available on the host.
 
 - name: Validate nginx settings and reject obsolete direct-public settings
   ansible.builtin.assert:

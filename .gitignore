@@ -5,3 +5,5 @@
 .known_hosts
 secrets.yml
 inventory.local.yml
+__pycache__/
+*.py[cod]

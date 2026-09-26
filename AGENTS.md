@@ -5,9 +5,14 @@
   in ignored `inventory.local.yml`. Commit only `inventory.example.yml`.
 - Use project-local `.venv` and pinned `requirements.txt` / `requirements.yml`.
 - Run `.venv/bin/ansible-lint` and playbook syntax checks after Ansible changes.
+- Run `.venv/bin/python -m unittest discover -s tests -v` after UDP guard changes.
 - Target is Ubuntu 24.04 amd64. Reinspect OS, kernel, interfaces, firewall and
   existing workloads before supporting another host.
 - Check mode is preflight only; validate actual runtime and second-run idempotency.
+- VPN UDP port is `amneziawg_port`, an integer from 1 to 65535. Keep server
+  WG_PORT, exported-client WG_CONFIG_PORT and firewall rules aligned. Check UDP
+  occupancy before migration, including loopback DNS sockets; never disable an
+  unrelated service to take its port. Existing clients need endpoint updates.
 - Never log passwords, bcrypt hashes, Docker environment or WireGuard configs.
   Keep secret-bearing Ansible tasks under `no_log: true`.
 - Panel backend must always use HTTP on 127.0.0.1:51821. Public access is enabled
@@ -27,6 +32,8 @@
 - TLS keys stay outside the build context and panel container. Validate nginx
   before activation/reload and explicitly trust its certificate during checks;
   never disable certificate verification. nginx sets Secure cookies for HTTPS.
+- Keep TLS subject/issuer and public authentication realm neutral (`Restricted`).
+  CSR changes must reissue the certificate; renewal must preserve that identity.
 - Daily renewal uses /etc/cron.d/amneziawg-certificate and a locked atomic helper.
   Reload only the active proxy after nginx validation; retain a retry marker on
   failure. Never start a stopped proxy or restart the VPN container for renewal.
