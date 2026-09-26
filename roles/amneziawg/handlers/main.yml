@@ -1,0 +1,6 @@
+---
+- name: Restart AmneziaWG firewall
+  ansible.builtin.systemd_service:
+    name: amneziawg-firewall
+    daemon_reload: true
+    state: restarted

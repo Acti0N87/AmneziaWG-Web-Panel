@@ -1,0 +1,29 @@
+#!/bin/sh
+set -eu
+# The container manages legacy NAT/FORWARD hooks; Docker's nft FORWARD policy
+# also needs these narrow allows. Never flush rules or change default policies.
+action="${1:-start}"
+if [ "$action" = stop ]; then
+    # Discover old rule specifications too, so changing a port/interface cleans up.
+    exec python3 - <<'PY'
+import shlex
+import subprocess
+
+rules = subprocess.check_output(["iptables-nft-save", "-t", "filter"], text=True)
+for line in rules.splitlines():
+    args = shlex.split(line)
+    if not args or args[0] != "-A" or "--comment" not in args:
+        continue
+    if args[args.index("--comment") + 1] == "amneziawg-ansible":
+        subprocess.run(["iptables-nft", "-w", "-D", *args[1:]], check=True)
+PY
+fi
+rule() {
+    case "$action" in
+        start) iptables-nft -w -C "$@" 2>/dev/null || iptables-nft -w -I "$@" ;;
+        *) exit 2 ;;
+    esac
+}
+rule INPUT -p udp --dport {{ amneziawg_port }} -m comment --comment amneziawg-ansible -j ACCEPT
+rule FORWARD -i wg0 -o {{ amneziawg_device }} -s 10.8.0.0/24 -m comment --comment amneziawg-ansible -j ACCEPT
+rule FORWARD -i {{ amneziawg_device }} -o wg0 -d 10.8.0.0/24 -m conntrack --ctstate RELATED,ESTABLISHED -m comment --comment amneziawg-ansible -j ACCEPT

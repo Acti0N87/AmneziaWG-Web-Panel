@@ -1,0 +1,92 @@
+---
+- name: Install prerequisites and running kernel headers
+  ansible.builtin.apt:
+    name:
+      - ca-certificates
+      - gnupg
+      - curl
+      - iptables
+      - python3-bcrypt
+      - "linux-headers-{{ ansible_facts['kernel'] }}"
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Create scoped APT keyring directory
+  ansible.builtin.file:
+    path: /etc/apt/keyrings
+    state: directory
+    mode: '0755'
+
+- name: Install repository public keys
+  ansible.builtin.get_url:
+    url: "{{ item.url }}"
+    dest: "/etc/apt/keyrings/{{ item.name }}.asc"
+    mode: '0644'
+  loop:
+    - name: docker
+      url: https://download.docker.com/linux/ubuntu/gpg
+    - name: amneziawg
+      url: "https://keyserver.ubuntu.com/pks/lookup?op=get&search=0x{{ amneziawg_ppa_key }}"
+
+- name: Inspect Amnezia signing key fingerprint
+  ansible.builtin.command:
+    argv: [gpg, --show-keys, --with-colons, /etc/apt/keyrings/amneziawg.asc]
+  register: amneziawg_key_info
+  changed_when: false
+
+- name: Verify Amnezia signing key
+  ansible.builtin.assert:
+    that: "amneziawg_ppa_key in amneziawg_key_info.stdout"
+
+- name: Configure signed package repositories
+  ansible.builtin.copy:
+    dest: "/etc/apt/sources.list.d/{{ item.name }}.sources"
+    mode: '0644'
+    content: |
+      Types: deb
+      URIs: {{ item.url }}
+      Suites: noble
+      Components: {{ item.component }}
+      Architectures: amd64
+      Signed-By: /etc/apt/keyrings/{{ item.name }}.asc
+  loop:
+    - name: docker
+      url: https://download.docker.com/linux/ubuntu
+      component: stable
+    - name: amneziawg
+      url: https://ppa.launchpadcontent.net/amnezia/ppa/ubuntu
+      component: main
+  register: amneziawg_repositories
+
+- name: Install Docker and AmneziaWG kernel module
+  ansible.builtin.apt:
+    name:
+      - docker-ce
+      - docker-ce-cli
+      - docker-buildx-plugin
+      - containerd.io
+      - amneziawg
+      - amneziawg-tools
+    state: present
+    update_cache: "{{ amneziawg_repositories.changed }}"
+
+- name: Enable Docker
+  ansible.builtin.systemd_service:
+    name: docker
+    enabled: true
+    state: started
+
+- name: Load AmneziaWG module and persist across boots
+  community.general.modprobe:
+    name: amneziawg
+    state: present
+    persistent: present
+
+- name: Enable IPv4 routing
+  ansible.posix.sysctl:
+    name: net.ipv4.ip_forward
+    value: '1'
+    sysctl_file: /etc/sysctl.d/90-amneziawg.conf
+    sysctl_set: true
+    reload: true

@@ -1,0 +1,8 @@
+---
+all:
+  children:
+    vpn:
+      hosts:
+        amnezia:
+          ansible_host: vpn-server.example
+          ansible_user: root

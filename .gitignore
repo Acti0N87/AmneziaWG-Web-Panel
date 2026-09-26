@@ -1,0 +1,7 @@
+.venv/
+.ansible/
+.claude/
+*.retry
+.known_hosts
+secrets.yml
+inventory.local.yml

@@ -1,0 +1,6 @@
+---
+- name: Install AmneziaWG and its management panel
+  hosts: vpn
+  become: true
+  roles:
+    - amneziawg

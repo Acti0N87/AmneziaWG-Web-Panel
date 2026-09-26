@@ -1,0 +1,11 @@
+FROM {{ amneziawg_image }} AS tools
+USER root
+RUN apk add --no-cache build-base linux-headers
+COPY tools.tar.gz /tmp/tools.tar.gz
+RUN mkdir /tmp/tools && tar -xzf /tmp/tools.tar.gz --strip-components=1 -C /tmp/tools \
+    && make -C /tmp/tools/src -j2
+
+FROM {{ amneziawg_image }}
+COPY --from=tools /tmp/tools/src/wg /usr/bin/awg
+COPY fix-auth.cjs /tmp/fix-auth.cjs
+RUN node /tmp/fix-auth.cjs && rm /tmp/fix-auth.cjs

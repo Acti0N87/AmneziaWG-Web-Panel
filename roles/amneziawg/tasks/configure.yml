@@ -1,0 +1,166 @@
+---
+- name: Create private runtime and VPN data directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+  loop:
+    - "{{ amneziawg_directory }}"
+    - "{{ amneziawg_directory }}/wireguard"
+    - "{{ amneziawg_directory }}/build"
+
+- name: Download pinned current AmneziaWG tools source
+  ansible.builtin.get_url:
+    url: "https://codeload.github.com/amnezia-vpn/amneziawg-tools/tar.gz/{{ amneziawg_tools_commit }}"
+    dest: "{{ amneziawg_directory }}/build/tools.tar.gz"
+    checksum: "{{ amneziawg_tools_checksum }}"
+    mode: '0600'
+  register: amneziawg_tools_archive
+
+- name: Prepare compatible runtime image build
+  ansible.builtin.template:
+    src: Dockerfile.j2
+    dest: "{{ amneziawg_directory }}/build/Dockerfile"
+    mode: '0600'
+  register: amneziawg_dockerfile
+
+- name: Copy authentication response compatibility patch
+  ansible.builtin.copy:
+    src: fix-auth.cjs
+    dest: "{{ amneziawg_directory }}/build/fix-auth.cjs"
+    mode: '0600'
+  register: amneziawg_auth_patch
+
+- name: Build panel image with tools compatible with current kernel module
+  community.docker.docker_image_build:
+    name: "{{ amneziawg_runtime_image }}"
+    path: "{{ amneziawg_directory }}/build"
+    rebuild: >-
+      {{ 'always' if (amneziawg_tools_archive.changed or amneziawg_dockerfile.changed
+         or amneziawg_auth_patch.changed) else 'never' }}
+
+- name: Generate panel credentials once on the server
+  ansible.builtin.command:
+    argv: [python3, '-c', "{{ lookup('ansible.builtin.file', 'credentials.py') }}", "{{ amneziawg_directory }}"]
+    creates: "{{ amneziawg_directory }}/password.hash"
+  no_log: true
+
+- name: Read panel password hash
+  ansible.builtin.slurp:
+    src: "{{ amneziawg_directory }}/password.hash"
+  register: amneziawg_password_hash
+  no_log: true
+
+- name: Install narrowly scoped host firewall helper
+  ansible.builtin.template:
+    src: firewall.sh.j2
+    dest: /usr/local/sbin/amneziawg-firewall
+    mode: '0750'
+  notify: Restart AmneziaWG firewall
+
+- name: Install persistent host firewall unit
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/amneziawg-firewall.service
+    mode: '0644'
+    content: |
+      [Unit]
+      Description=AmneziaWG host nft compatibility rules
+      Requires=docker.service
+      After=docker.service
+      PartOf=docker.service
+
+      [Service]
+      Type=oneshot
+      RemainAfterExit=yes
+      ExecStart=/usr/local/sbin/amneziawg-firewall start
+      ExecStop=/usr/local/sbin/amneziawg-firewall stop
+
+      [Install]
+      WantedBy=docker.service
+  notify: Restart AmneziaWG firewall
+
+- name: Enable host firewall compatibility rules
+  ansible.builtin.systemd_service:
+    name: amneziawg-firewall
+    daemon_reload: true
+    enabled: true
+    state: started
+
+- name: Apply pending firewall changes
+  ansible.builtin.meta: flush_handlers
+
+- name: Start pinned AmneziaWG panel with localhost access
+  community.docker.docker_container:
+    name: amnezia-wg-easy
+    image: "{{ amneziawg_runtime_image }}"
+    pull: never
+    state: started
+    restart_policy: unless-stopped
+    network_mode: host
+    capabilities: [NET_ADMIN]
+    volumes:
+      - "{{ amneziawg_directory }}/wireguard:/etc/wireguard"
+    env:
+      WG_HOST: "{{ amneziawg_host }}"
+      WG_DEVICE: "{{ amneziawg_device }}"
+      WG_PORT: "{{ amneziawg_port | string }}"
+      WEBUI_HOST: 127.0.0.1
+      PORT: "{{ amneziawg_ui_port | string }}"
+      PASSWORD_HASH: "{{ amneziawg_password_hash.content | b64decode | trim }}"
+      LANG: en
+    log_driver: json-file
+    log_options:
+      max-size: 10m
+      max-file: '3'
+  no_log: true
+
+- name: Verify VPN interface and configured UDP port
+  ansible.builtin.command: awg show wg0 listen-port
+  register: amneziawg_listen_port
+  changed_when: false
+  until:
+    - amneziawg_listen_port.rc == 0
+    - amneziawg_listen_port.stdout | int == amneziawg_port | int
+  retries: 20
+  delay: 3
+
+- name: Wait for authenticated management API
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ amneziawg_ui_port }}/api/session"
+    return_content: true
+  register: amneziawg_session
+  until: amneziawg_session.status == 200
+  retries: 20
+  delay: 3
+
+- name: Verify panel requires a password
+  ansible.builtin.assert:
+    that:
+      - amneziawg_session.json.requiresPassword | bool
+      - not amneziawg_session.json.authenticated | bool
+
+- name: Verify client API refuses unauthenticated requests
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ amneziawg_ui_port }}/api/wireguard/client"
+    status_code: 401
+
+- name: Verify real panel login and reject an incorrect password
+  ansible.builtin.command:
+    argv:
+      - python3
+      - '-c'
+      - "{{ lookup('ansible.builtin.file', 'verify-login.py') }}"
+      - "{{ amneziawg_directory }}"
+      - "{{ amneziawg_ui_port | string }}"
+  changed_when: false
+  no_log: true
+
+- name: Verify panel only listens on loopback
+  ansible.builtin.command: "ss -H -lnt sport = :{{ amneziawg_ui_port }}"
+  register: amneziawg_listener
+  changed_when: false
+  failed_when: >-
+    amneziawg_listener.stdout_lines | length != 1 or
+    amneziawg_listener.stdout.split()[3] != ('127.0.0.1:' ~ (amneziawg_ui_port | string))

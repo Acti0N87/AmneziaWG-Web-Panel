@@ -1,0 +1,12 @@
+---
+amneziawg_host: "{{ ansible_host }}"
+amneziawg_device: "{{ ansible_facts['default_ipv4']['interface'] }}"
+amneziawg_port: 51820
+amneziawg_ui_port: 51821
+amneziawg_image: >-
+  eyrafir/amnezia-wg-easy@sha256:1c8b659d9522645ee8dfe50c80e3e5bcd25c2869f209e1ecaaa98edd129dbdef
+amneziawg_directory: /opt/amneziawg
+amneziawg_ppa_key: 75C9DD72C799870E310542E24166F2C257290828
+amneziawg_tools_commit: ee0f0a9aa34ff0a0da4b3433b9512781cfe02843
+amneziawg_tools_checksum: sha256:22438f231d39ea27e4bdc69707ec3103357f3cecc9ad3eecba18a61e5b39c9b9
+amneziawg_runtime_image: "amneziawg-local:{{ amneziawg_tools_commit[:12] }}"

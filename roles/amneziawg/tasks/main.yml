@@ -1,0 +1,39 @@
+---
+- name: Check supported deployment platform and settings
+  ansible.builtin.assert:
+    that:
+      - ansible_facts['distribution'] == 'Ubuntu'
+      - ansible_facts['distribution_version'] == '24.04'
+      - ansible_facts['architecture'] == 'x86_64'
+      - amneziawg_device is match('^[a-zA-Z0-9_.-]+$')
+      - amneziawg_port | int > 1024
+      - amneziawg_port | int < 65536
+      - amneziawg_ui_port | int > 1024
+      - amneziawg_ui_port | int < 65536
+    fail_msg: This playbook supports Ubuntu 24.04 amd64; review other platforms before extending it.
+
+- name: Inspect installed packages
+  ansible.builtin.package_facts:
+    manager: apt
+
+- name: Refuse conflicting Docker packages
+  ansible.builtin.assert:
+    that:
+      - "'docker.io' not in ansible_facts.packages"
+      - "'podman-docker' not in ansible_facts.packages"
+    fail_msg: Existing container runtimes need a separate migration plan.
+
+- name: Explain first-install check mode limitation
+  ansible.builtin.debug:
+    msg: >-
+      Check mode validates platform and existing state. On a fresh host, tasks requiring
+      new repositories, packages, module or credentials are deferred to the actual install.
+  when: ansible_check_mode
+
+- name: Install AmneziaWG dependencies and runtime
+  ansible.builtin.import_tasks: install.yml
+  when: not ansible_check_mode
+
+- name: Configure and verify AmneziaWG
+  ansible.builtin.import_tasks: configure.yml
+  when: not ansible_check_mode
