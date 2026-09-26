@@ -6,3 +6,4 @@ all:
         amnezia:
           ansible_host: vpn-server.example
           ansible_user: root
+          amneziawg_ui_public: false

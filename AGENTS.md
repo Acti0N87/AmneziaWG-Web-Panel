@@ -10,7 +10,10 @@
 - Check mode is preflight only; validate actual runtime and second-run idempotency.
 - Never log passwords, bcrypt hashes, Docker environment or WireGuard configs.
   Keep secret-bearing Ansible tasks under `no_log: true`.
-- Keep panel binding at loopback; public access needs a separately reviewed TLS setup.
+- Default to loopback. Public HTTP access is explicitly controlled by
+  `amneziawg_ui_public: true`; keep password authentication enabled in both modes.
+  Document that the flag does not enable TLS. Turning it off must remove the
+  managed TCP rule and restore loopback binding.
 - Do not flush firewall rules, change SSH rules, perform full OS upgrades or reboot
   as part of this installer. Only touch rules labelled `amneziawg-ansible`.
 - Keep persistent VPN data on rollback. Follow the README stop procedure.

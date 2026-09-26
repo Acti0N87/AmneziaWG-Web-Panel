@@ -91,7 +91,7 @@
 - name: Apply pending firewall changes
   ansible.builtin.meta: flush_handlers
 
-- name: Start pinned AmneziaWG panel with localhost access
+- name: Start pinned AmneziaWG panel with configured access
   community.docker.docker_container:
     name: amnezia-wg-easy
     image: "{{ amneziawg_runtime_image }}"
@@ -106,7 +106,7 @@
       WG_HOST: "{{ amneziawg_host }}"
       WG_DEVICE: "{{ amneziawg_device }}"
       WG_PORT: "{{ amneziawg_port | string }}"
-      WEBUI_HOST: 127.0.0.1
+      WEBUI_HOST: "{{ amneziawg_ui_bind_address }}"
       PORT: "{{ amneziawg_ui_port | string }}"
       PASSWORD_HASH: "{{ amneziawg_password_hash.content | b64decode | trim }}"
       LANG: en
@@ -157,10 +157,10 @@
   changed_when: false
   no_log: true
 
-- name: Verify panel only listens on loopback
+- name: Verify panel listens on the configured address
   ansible.builtin.command: "ss -H -lnt sport = :{{ amneziawg_ui_port }}"
   register: amneziawg_listener
   changed_when: false
   failed_when: >-
     amneziawg_listener.stdout_lines | length != 1 or
-    amneziawg_listener.stdout.split()[3] != ('127.0.0.1:' ~ (amneziawg_ui_port | string))
+    amneziawg_listener.stdout.split()[3] != (amneziawg_ui_bind_address ~ ':' ~ (amneziawg_ui_port | string))

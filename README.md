@@ -111,7 +111,8 @@ before applying elsewhere. Provider firewalls must permit UDP 51820 and SSH.
 
 ## Open the panel
 
-The panel serves HTTP on **127.0.0.1:51821**. Access it through SSH:
+By default (`amneziawg_ui_public: false`), the panel serves HTTP on
+**127.0.0.1:51821**. Access it through SSH:
 
 ```sh
 ssh -N -L 51821:127.0.0.1:51821 root@vpn-server.example
@@ -123,6 +124,38 @@ Open <http://127.0.0.1:51821>. In another terminal, retrieve the generated passw
 ssh root@vpn-server.example 'cat /opt/amneziawg/password.txt'
 ```
 
+### Public access
+
+To expose the panel, set this boolean under the target host in your private
+`inventory.local.yml`:
+
+```yaml
+amneziawg_ui_public: true
+```
+
+Apply the inventory setting:
+
+```sh
+.venv/bin/ansible-playbook -i inventory.local.yml playbook.yml
+```
+
+Open `http://vpn-server.example:51821` and use the same generated password.
+The flag binds the panel to `0.0.0.0` and adds a managed TCP INPUT rule for
+`amneziawg_ui_port` (51821 by default). Allow that port in any provider firewall
+as well. Authentication remains required. **This is plain HTTP: the flag does
+not configure TLS, and credentials/session traffic are not encrypted.**
+
+For a one-off override, use a JSON boolean:
+
+```sh
+.venv/bin/ansible-playbook -i inventory.local.yml playbook.yml -e '{"amneziawg_ui_public": true}'
+```
+
+To make the panel private again, set `amneziawg_ui_public: false` in the local
+inventory and rerun the playbook. This restores loopback binding and removes
+the managed TCP rule. Switching modes recreates the container and briefly
+interrupts VPN connections; existing credentials and client data are retained.
+
 Create a client in the panel and import its QR code/config into AmneziaWG.
 Secrets and client keys stay on the server in `/opt/amneziawg`, with root-only
 directory access. Back up that directory securely. Do not commit it or paste its
@@ -131,7 +164,7 @@ contents into logs. Only the bcrypt hash is passed to the container.
 The article's `PASSWORD` setting is replaced with `PASSWORD_HASH`. Port 443 alone
 does not enable HTTPS. See the [upstream configuration](https://github.com/eyrafir/amnezia-wg-easy/blob/a64b79fa56ee51ddc41bb1a3dec75bdc7aa2a0fa/src/config.js).
 The playbook checks password enforcement, an unauthenticated API rejection,
-loopback binding, and the VPN listening port.
+the selected binding, and the VPN listening port.
 
 The base image bundles old `awg` tools that fail with the current v3 kernel module
 (`netlink: attribute type 14 has an invalid length`). The role builds a small

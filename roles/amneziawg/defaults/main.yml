@@ -3,6 +3,8 @@ amneziawg_host: "{{ ansible_host }}"
 amneziawg_device: "{{ ansible_facts['default_ipv4']['interface'] }}"
 amneziawg_port: 51820
 amneziawg_ui_port: 51821
+amneziawg_ui_public: false
+amneziawg_ui_bind_address: "{{ '0.0.0.0' if amneziawg_ui_public | bool else '127.0.0.1' }}"
 amneziawg_image: >-
   eyrafir/amnezia-wg-easy@sha256:1c8b659d9522645ee8dfe50c80e3e5bcd25c2869f209e1ecaaa98edd129dbdef
 amneziawg_directory: /opt/amneziawg

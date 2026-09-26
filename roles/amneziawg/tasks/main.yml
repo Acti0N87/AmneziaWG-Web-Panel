@@ -10,6 +10,7 @@
       - amneziawg_port | int < 65536
       - amneziawg_ui_port | int > 1024
       - amneziawg_ui_port | int < 65536
+      - amneziawg_ui_public is boolean
     fail_msg: This playbook supports Ubuntu 24.04 amd64; review other platforms before extending it.
 
 - name: Inspect installed packages
