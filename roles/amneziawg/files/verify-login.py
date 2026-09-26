@@ -1,4 +1,5 @@
 """Verify real login without sending secrets through arguments or output."""
+import base64
 import http.cookiejar
 import json
 from pathlib import Path
@@ -16,6 +17,34 @@ if scheme == 'https':
     context = ssl.create_default_context(cafile=str(Path(sys.argv[1]) / 'tls/cert.pem'))
     handlers.append(urllib.request.HTTPSHandler(context=context))
 client = urllib.request.build_opener(*handlers)
+
+if len(sys.argv) > 4 and sys.argv[4] == 'proxy':
+    directory = Path(sys.argv[1])
+    username = (directory / 'nginx-username.txt').read_text().strip()
+    proxy_password = (directory / 'nginx-password.txt').read_text().strip()
+
+    def basic_header(value):
+        return 'Basic ' + base64.b64encode(f'{username}:{value}'.encode()).decode()
+
+    for path in ['/', '/api/session', '/api/wireguard/client']:
+        for headers in [{}, {'Authorization': basic_header('invalid-' + proxy_password)}]:
+            try:
+                client.open(urllib.request.Request(base + path, headers=headers), timeout=10)
+            except urllib.error.HTTPError as error:
+                assert error.code == 401, 'Proxy must reject missing or invalid credentials'
+                assert 'Basic realm=' in error.headers.get('WWW-Authenticate', '')
+            else:
+                raise AssertionError('Proxy accepted missing or invalid credentials')
+    client.addheaders = [('Authorization', basic_header(proxy_password))]
+    with client.open(base + '/api/session', timeout=10) as response:
+        session = json.load(response)
+        assert session['requiresPassword'] and not session['authenticated']
+    try:
+        client.open(base + '/api/wireguard/client', timeout=10)
+    except urllib.error.HTTPError as error:
+        assert error.code == 401, 'Panel must still require its own login'
+    else:
+        raise AssertionError('Basic authentication bypassed panel authentication')
 
 
 def login(value):

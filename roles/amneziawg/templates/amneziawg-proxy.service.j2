@@ -1,0 +1,17 @@
+[Unit]
+Description=AmneziaWG nginx authentication proxy
+After=network.target docker.service
+
+[Service]
+Type=forking
+PIDFile=/run/amneziawg-nginx.pid
+ExecStartPre=/usr/sbin/nginx -t -c /etc/amneziawg-nginx/nginx.conf
+ExecStart=/usr/sbin/nginx -c /etc/amneziawg-nginx/nginx.conf
+ExecReload=/usr/sbin/nginx -t -c /etc/amneziawg-nginx/nginx.conf
+ExecReload=/bin/kill -HUP $MAINPID
+KillSignal=SIGQUIT
+TimeoutStopSec=30
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

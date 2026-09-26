@@ -26,7 +26,7 @@ rule() {
 }
 rule INPUT -p udp --dport {{ amneziawg_port }} -m comment --comment amneziawg-ansible -j ACCEPT
 {% if amneziawg_ui_public | bool %}
-rule INPUT -p tcp --dport {{ amneziawg_ui_port }} -m comment --comment amneziawg-ansible -j ACCEPT
+rule INPUT -p tcp --dport {{ amneziawg_nginx_port }} -m comment --comment amneziawg-ansible -j ACCEPT
 {% endif %}
 rule FORWARD -i wg0 -o {{ amneziawg_device }} -s 10.8.0.0/24 -m comment --comment amneziawg-ansible -j ACCEPT
 rule FORWARD -i {{ amneziawg_device }} -o wg0 -d 10.8.0.0/24 -m conntrack --ctstate RELATED,ESTABLISHED -m comment --comment amneziawg-ansible -j ACCEPT

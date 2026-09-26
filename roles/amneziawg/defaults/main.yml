@@ -2,13 +2,13 @@
 amneziawg_host: "{{ ansible_host }}"
 amneziawg_device: "{{ ansible_facts['default_ipv4']['interface'] }}"
 amneziawg_port: 51820
-amneziawg_ui_port: 51821
+# The panel is always HTTP on 127.0.0.1:51821. Only nginx is public.
 amneziawg_ui_public: false
-amneziawg_tls_enabled: false
-amneziawg_ui_effective_port: "{{ amneziawg_ui_port if amneziawg_ui_public else 51821 }}"
-amneziawg_tls_active: "{{ amneziawg_ui_public and amneziawg_tls_enabled }}"
-amneziawg_ui_scheme: "{{ 'https' if amneziawg_tls_active else 'http' }}"
-amneziawg_ui_bind_address: "{{ '0.0.0.0' if amneziawg_ui_public | bool else '127.0.0.1' }}"
+amneziawg_nginx_port: 80
+amneziawg_nginx_tls_enabled: false
+amneziawg_nginx_username: admin
+amneziawg_tls_active: "{{ amneziawg_ui_public and amneziawg_nginx_tls_enabled }}"
+amneziawg_nginx_scheme: "{{ 'https' if amneziawg_tls_active else 'http' }}"
 amneziawg_image: >-
   eyrafir/amnezia-wg-easy@sha256:1c8b659d9522645ee8dfe50c80e3e5bcd25c2869f209e1ecaaa98edd129dbdef
 amneziawg_directory: /opt/amneziawg

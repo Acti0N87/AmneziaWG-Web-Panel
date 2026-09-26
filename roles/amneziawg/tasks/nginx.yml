@@ -1,0 +1,134 @@
+---
+- name: Inspect services for proxy lifecycle
+  ansible.builtin.service_facts:
+
+- name: Stop and disable proxy in private mode
+  ansible.builtin.systemd_service:
+    name: amneziawg-proxy
+    state: stopped
+    enabled: false
+  when:
+    - not amneziawg_ui_public
+    - "'amneziawg-proxy.service' in ansible_facts.services"
+
+- name: Configure public proxy
+  when: amneziawg_ui_public
+  block:
+    - name: Install nginx without starting the distribution default site
+      ansible.builtin.apt:
+        name: nginx
+        state: present
+        policy_rc_d: 101
+
+    - name: Disable unused distribution nginx service on new installations
+      ansible.builtin.systemd_service:
+        name: nginx
+        enabled: false
+      when: "'nginx.service' not in ansible_facts.services"
+
+    - name: Create proxy configuration directory readable by nginx workers
+      ansible.builtin.file:
+        path: /etc/amneziawg-nginx
+        state: directory
+        owner: root
+        group: www-data
+        mode: '0750'
+
+    - name: Generate independent nginx credentials once on the server
+      ansible.builtin.command:
+        argv: [python3, '-c', "{{ lookup('ansible.builtin.file', 'proxy-credentials.py') }}", "{{ amneziawg_directory }}"]
+        creates: "{{ amneziawg_directory }}/nginx-password.hash"
+      no_log: true
+
+    - name: Store nginx username next to the generated password
+      ansible.builtin.copy:
+        dest: "{{ amneziawg_directory }}/nginx-username.txt"
+        content: "{{ amneziawg_nginx_username }}\n"
+        owner: root
+        group: root
+        mode: '0600'
+      no_log: true
+
+    - name: Read nginx password hash
+      ansible.builtin.slurp:
+        src: "{{ amneziawg_directory }}/nginx-password.hash"
+      register: amneziawg_nginx_password_hash
+      no_log: true
+
+    - name: Install nginx authentication file containing only the hash
+      ansible.builtin.copy:
+        dest: /etc/amneziawg-nginx/htpasswd
+        content: "{{ amneziawg_nginx_username }}:{{ amneziawg_nginx_password_hash.content | b64decode | trim }}\n"
+        owner: root
+        group: www-data
+        mode: '0640'
+      no_log: true
+
+    - name: Install validated isolated nginx configuration
+      ansible.builtin.template:
+        src: nginx.conf.j2
+        dest: /etc/amneziawg-nginx/nginx.conf
+        owner: root
+        group: root
+        mode: '0644'
+        validate: /usr/sbin/nginx -t -c %s
+      notify: Reload AmneziaWG proxy
+
+    - name: Install dedicated nginx systemd service
+      ansible.builtin.template:
+        src: amneziawg-proxy.service.j2
+        dest: /etc/systemd/system/amneziawg-proxy.service
+        mode: '0644'
+      notify: Restart AmneziaWG proxy
+
+    - name: Start and enable public nginx proxy
+      ansible.builtin.systemd_service:
+        name: amneziawg-proxy
+        daemon_reload: true
+        state: started
+        enabled: true
+
+    - name: Apply pending proxy configuration changes
+      ansible.builtin.meta: flush_handlers
+
+    - name: Load any certificate issued by an interrupted deployment
+      ansible.builtin.command: /usr/local/sbin/amneziawg-renew-certificate
+      register: amneziawg_nginx_certificate_reload
+      changed_when: "'Reloaded running nginx' in amneziawg_nginx_certificate_reload.stdout"
+      when: amneziawg_tls_active
+
+    - name: Verify public proxy denies requests without Basic authentication
+      ansible.builtin.uri:
+        url: "{{ amneziawg_nginx_scheme }}://127.0.0.1:{{ amneziawg_nginx_port }}/api/session"
+        ca_path: "{{ (amneziawg_directory ~ '/tls/cert.pem') if amneziawg_tls_active else omit }}"
+        validate_certs: true
+        status_code: 401
+      register: amneziawg_nginx_challenge
+      until: amneziawg_nginx_challenge.status == 401
+      retries: 10
+      delay: 2
+
+    - name: Verify nginx Basic authentication challenge
+      ansible.builtin.assert:
+        that: "'Basic realm=' in amneziawg_nginx_challenge.www_authenticate"
+
+    - name: Verify both authentication layers through nginx
+      ansible.builtin.command:
+        argv:
+          - python3
+          - '-c'
+          - "{{ lookup('ansible.builtin.file', 'verify-login.py') }}"
+          - "{{ amneziawg_directory }}"
+          - "{{ amneziawg_nginx_port | string }}"
+          - "{{ amneziawg_nginx_scheme }}"
+          - proxy
+      changed_when: false
+      no_log: true
+
+    - name: Verify nginx listens on the public port
+      ansible.builtin.command: "ss -H -lnt sport = :{{ amneziawg_nginx_port }}"
+      register: amneziawg_nginx_listener
+      changed_when: false
+      failed_when: >-
+        amneziawg_nginx_listener.stdout_lines | length != 1 or
+        amneziawg_nginx_listener.stdout.split()[3] != ('0.0.0.0:' ~ (amneziawg_nginx_port | string))

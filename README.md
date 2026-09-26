@@ -109,163 +109,145 @@ check for overlapping networks before using it on another server. This deploymen
 was designed for a clean host; inspect existing VPNs, containers and firewalls
 before applying elsewhere. Provider firewalls must permit UDP 51820 and SSH.
 
-## Open the panel
+## Open the panel privately
 
-Set `amneziawg_ui_port` under the target host in `inventory.local.yml` to select
-any public TCP port from **1 to 65535** (YAML integer). The default is **51821**.
-Custom port and TLS settings apply only when `amneziawg_ui_public: true`.
-Localhost mode always uses plain HTTP on `127.0.0.1:51821`, regardless of those
-stored settings, and has no certificate-renewal cron job.
-For public access on port 80:
-
-```yaml
-amneziawg_ui_public: true
-amneziawg_ui_port: 80
-```
-
-```sh
-.venv/bin/ansible-playbook -i inventory.local.yml playbook.yml
-```
-
-Then open `http://vpn-server.example/`. Ensure the selected port is not already
-used by another service. Changing it updates the listener and managed firewall
-rule, removing the old port's managed rule. The container briefly restarts;
-password and client data are retained. To revert, restore the previous port and
-reapply. The port alone does not select HTTP or HTTPS; use `amneziawg_tls_enabled`.
-
-The examples below use the default port. Substitute your configured port in
-panel URLs, SSH tunnel destinations, health checks and provider firewall rules.
-In localhost mode, use the fixed tunnel destination `127.0.0.1:51821`.
-
-By default (`amneziawg_ui_public: false`), the panel serves HTTP on
-**127.0.0.1:51821**. Access it through SSH:
+The panel always serves plain HTTP on **127.0.0.1:51821**. By default,
+`amneziawg_ui_public: false`, so the nginx proxy is disabled and no public TCP
+port is opened. Access the panel through SSH:
 
 ```sh
 ssh -N -L 51821:127.0.0.1:51821 root@vpn-server.example
 ```
 
-Open <http://127.0.0.1:51821>. In another terminal, retrieve the generated password:
+Open <http://127.0.0.1:51821>. Retrieve the existing panel password in another terminal:
 
 ```sh
 ssh root@vpn-server.example 'cat /opt/amneziawg/password.txt'
 ```
 
-### Public access
+## Public access through nginx
 
-To expose the panel, set this boolean under the target host in your private
-`inventory.local.yml`:
-
-```yaml
-amneziawg_ui_public: true
-```
-
-Apply the inventory setting:
-
-```sh
-.venv/bin/ansible-playbook -i inventory.local.yml playbook.yml
-```
-
-Open `http://vpn-server.example:51821` and use the same generated password.
-The flag binds the panel to `0.0.0.0` and adds a managed TCP INPUT rule for
-`amneziawg_ui_port` (51821 by default). Allow that port in any provider firewall
-as well. Authentication remains required. **This is plain HTTP: the flag does
-not configure TLS by itself. Enable TLS below to encrypt credentials and sessions.**
-
-For a one-off override, use a JSON boolean:
-
-```sh
-.venv/bin/ansible-playbook -i inventory.local.yml playbook.yml -e '{"amneziawg_ui_public": true}'
-```
-
-To override both settings for one deployment:
-
-```sh
-.venv/bin/ansible-playbook -i inventory.local.yml playbook.yml -e '{"amneziawg_ui_public": true, "amneziawg_ui_port": 80}'
-```
-
-To make the panel private again, set `amneziawg_ui_public: false` in the local
-inventory and rerun the playbook. This restores loopback binding and removes
-the managed TCP rule. Switching modes recreates the container and briefly
-interrupts VPN connections; existing credentials and client data are retained.
-
-### HTTPS with a self-signed certificate
-
-Configure the target in the ignored local inventory:
+Set these variables under the target host in the ignored `inventory.local.yml`:
 
 ```yaml
 amneziawg_ui_public: true
-amneziawg_ui_port: 443
-amneziawg_tls_enabled: true
+amneziawg_nginx_port: 443
+amneziawg_nginx_tls_enabled: true
+amneziawg_nginx_username: admin
 ```
+
+Then deploy:
 
 ```sh
 .venv/bin/ansible-galaxy collection install -r requirements.yml
 .venv/bin/ansible-playbook -i inventory.local.yml playbook.yml
 ```
 
-Open `https://vpn-server.example/`. The panel serves HTTPS directly with TLS 1.2
-or newer; there is no plaintext listener or HTTP redirect. The prior managed
-HTTP port rule is removed. Password authentication stays enabled and session
-cookies become Secure. `amneziawg_tls_enabled` defaults to false and takes effect
-only in public mode. With public mode disabled, TLS and custom port settings are ignored.
+Open `https://vpn-server.example/`. First sign in to nginx's browser Basic-auth
+prompt, then use the panel's existing password on its login screen. Both layers
+remain required. Retrieve the generated nginx credentials over verified SSH:
 
+```sh
+ssh root@vpn-server.example 'cat /opt/amneziawg/nginx-username.txt /opt/amneziawg/nginx-password.txt'
+```
+
+Ansible generates an independent random Basic-auth password once on the server.
+The username defaults to `admin` and is configurable. Plaintext credentials and
+the bcrypt hash live under `/opt/amneziawg` with root-only access and are retained
+on redeployment. nginx workers read only a hash from
+`/etc/amneziawg-nginx/htpasswd` (`root:www-data`, mode `0640`). Secret-bearing tasks
+suppress output. Do not put credentials in inventory, commands, Git, or logs.
+
+`amneziawg_ui_public` is the sole switch for public access: it enables the dedicated
+`amneziawg-proxy.service`, which forwards to `http://127.0.0.1:51821`, and adds a
+managed TCP firewall rule. The backend never listens publicly. nginx validates
+Basic authentication on every path and removes its Authorization header before
+forwarding requests. The distribution's default nginx site is not started on a
+new installation; existing unrelated nginx services and sites are left intact.
+
+`amneziawg_nginx_port` selects the public TCP port (default **80**, allowed
+1–65535 except **51821**, reserved for the backend).
+`amneziawg_nginx_tls_enabled` selects HTTPS (default **false**). Configured values must remain valid even in private mode. Both settings only
+affect nginx while `amneziawg_ui_public: true`. For HTTP use port 80 and TLS false;
+HTTP sends Basic credentials and panel sessions without encryption, so use HTTPS
+for public deployments. Changing the port alone does not change the protocol.
+Ensure the selected TCP port is allowed by your provider firewall.
+
+The playbook rejects ports owned by unrelated services. Port changes reload nginx
+and replace the old managed firewall rule. Set the previous port and reapply to
+undo a port change. Set `amneziawg_ui_public: false` and reapply to stop/disable the
+proxy, remove its managed TCP rule and remove certificate-renewal cron. Stored
+nginx port/TLS settings are ignored in private mode; localhost HTTP remains
+available through SSH. Switching proxy modes does not recreate the VPN container.
+
+### Migration from direct public panel access
+
+Keep `amneziawg_ui_public`, rename `amneziawg_ui_port` to `amneziawg_nginx_port`,
+and rename `amneziawg_tls_enabled` to `amneziawg_nginx_tls_enabled` in local inventory.
+Old port/TLS variable names are rejected explicitly. A former public port of
+51821 must change (for example to 443 with TLS). The first migration recreates the
+panel container on localhost, briefly interrupting VPN connections; panel/client
+data and the existing certificate are retained. Subsequent nginx port, TLS, and
+publication changes do not restart the VPN container.
+
+### HTTPS with a self-signed certificate
+
+nginx terminates TLS 1.2/1.3 and sets Secure, HttpOnly, SameSite=Lax session cookies
+when HTTPS is enabled. There is no public plaintext listener or HTTP redirect.
 The playbook creates a 3072-bit RSA key and a self-signed certificate valid for
-365 days. The certificate covers `amneziawg_host` (the configured VPN endpoint)
-and localhost, including IP SANs for numeric addresses. Use that endpoint in
-your browser, or update `amneziawg_host` and reapply when changing the address.
-The private key and CSR remain under `/opt/amneziawg/tls`, outside the image
-build context; the directory is mounted read-only in the container.
+365 days. It covers `amneziawg_host` (the configured VPN endpoint) and localhost,
+including IP SANs for numeric addresses. Update `amneziawg_host` and reapply when
+changing the address. TLS files remain under `/opt/amneziawg/tls` outside the image
+build context; the panel container has no TLS key or certificate mount.
 
-Browsers will show a trust warning until you explicitly trust this self-signed
-certificate. Retrieve the public certificate over your verified SSH connection
-and check its SHA-256 fingerprint before trusting it:
+Browsers show a trust warning until you explicitly trust the self-signed
+certificate. Retrieve only the public certificate over verified SSH and check its
+SHA-256 fingerprint before trusting it:
 
 ```sh
 ssh root@vpn-server.example 'openssl x509 -in /opt/amneziawg/tls/cert.pem -noout -fingerprint -sha256'
 scp root@vpn-server.example:/opt/amneziawg/tls/cert.pem /tmp/amneziawg-cert.pem
-curl --cacert /tmp/amneziawg-cert.pem https://vpn-server.example/api/session
+# curl prompts for the nginx password; use your configured username:
+curl --cacert /tmp/amneziawg-cert.pem --user admin https://vpn-server.example/api/session
 ```
 
-Only copy `cert.pem`; keep `key.pem` on the server. Automated deployment checks
-trust the certificate explicitly, verify its SAN, and exercise login over HTTPS.
+Keep `key.pem` on the server. Deployment checks explicitly trust the generated
+certificate, verify its SAN, reject missing/wrong Basic credentials, and exercise
+both authentication layers and Secure cookies through HTTPS. See the nginx
+[Basic authentication](https://nginx.org/en/docs/http/ngx_http_auth_basic_module.html)
+and [cookie flags](https://nginx.org/en/docs/http/ngx_http_proxy_module.html#proxy_cookie_flags)
+documentation for the proxy directives used.
 
 ### Automatic certificate renewal
 
-With public mode and TLS enabled, `/etc/cron.d/amneziawg-certificate` runs daily at **03:17 in
-the server's timezone** as root. It renews when fewer than 30 days remain, using
-the existing private key and CSR. A lock prevents overlapping renewals, the new
-certificate is verified and atomically installed, and the running VPN container
-restarts to load it. Renewal briefly interrupts VPN connections. A stopped
-container stays stopped. A failed restart leaves a marker for retry on the next
-run. Logs are sent to syslog with the `amneziawg-tls` tag.
+With public mode and nginx TLS enabled, `/etc/cron.d/amneziawg-certificate` runs
+daily at **03:17 in the server's timezone** as root. It renews when fewer than
+30 days remain, using the existing private key and CSR. A lock prevents overlapping
+renewals; the new certificate is verified and atomically installed. The helper
+validates nginx configuration and reloads only the active `amneziawg-proxy`
+service. It never restarts the VPN container or starts a stopped proxy. A failed
+validation/reload leaves a marker for retry on the next run. Logs use the
+`amneziawg-tls` syslog tag.
 
 ```sh
 ssh root@vpn-server.example 'cat /etc/cron.d/amneziawg-certificate'
 ssh root@vpn-server.example 'journalctl -t amneziawg-tls'
-# Check renewal now; a certificate with more than 30 days left is unchanged:
+# Check now; a certificate with more than 30 days left stays unchanged:
 ssh root@vpn-server.example /usr/local/sbin/amneziawg-renew-certificate
-# Force renewal and reload (also changes the certificate fingerprint):
+# Force renewal and nginx reload (changes the certificate fingerprint):
 ssh root@vpn-server.example '/usr/local/sbin/amneziawg-renew-certificate --force'
 ```
 
-After renewal, refresh any clients that explicitly trust the old self-signed
-certificate. The certificate fingerprint changes even though the key is retained.
-The playbook also checks the renewal window on each apply. Disabling TLS in public
-mode removes the cron job and switches the configured public port back to HTTP;
-set the intended HTTP port explicitly. Disabling public mode instead always returns
-to HTTP on localhost:51821 and removes the cron job, even if TLS remains configured
-in inventory. The retained certificate/key are not deleted.
+Refresh clients that explicitly trust the old certificate after renewal. The
+fingerprint changes even though the key is retained. Disabling nginx TLS removes
+the cron job and serves HTTP on the configured nginx port; set the intended HTTP
+port explicitly. Disabling public mode stops the proxy and removes cron regardless
+of stored TLS settings. Certificates and credentials are retained.
 
 Create a client in the panel and import its QR code/config into AmneziaWG.
-Secrets and client keys stay on the server in `/opt/amneziawg`, with root-only
-directory access. Back up that directory securely. Do not commit it or paste its
-contents into logs. Only the bcrypt hash is passed to the container.
-
-The article's `PASSWORD` setting is replaced with `PASSWORD_HASH`. HTTPS is added
-by the derived image's checked native TLS patch; the original image only serves
-HTTP. See the [upstream configuration](https://github.com/eyrafir/amnezia-wg-easy/blob/a64b79fa56ee51ddc41bb1a3dec75bdc7aa2a0fa/src/config.js).
-The playbook checks password enforcement, an unauthenticated API rejection,
-the selected binding, and the VPN listening port.
+Secrets and client keys stay under `/opt/amneziawg`; back it up securely. Only the
+panel's bcrypt hash is passed to the container. The article's `PASSWORD` setting
+is replaced with `PASSWORD_HASH`.
 
 The base image bundles old `awg` tools that fail with the current v3 kernel module
 (`netlink: attribute type 14 has an invalid length`). The role builds a small
@@ -283,7 +265,7 @@ password; all secret-bearing operations suppress Ansible output.
 `WG_DEVICE` uses the discovered external interface (`ens3` on this host), so the
 container's own NAT rules are correct. Its legacy iptables rules are supplemented
 with scoped host iptables-nft INPUT/FORWARD rules. Existing rules/default policies
-are never flushed or replaced. Only the selected public UI TCP port is opened. IPv4 tunnel routing is
+are never flushed or replaced. Only the selected public nginx TCP port is opened. IPv4 tunnel routing is
 configured; client IPv6 behavior should be checked separately.
 
 ## Verification and stop procedure
@@ -291,14 +273,16 @@ configured; client IPv6 behavior should be checked separately.
 ```sh
 ssh root@vpn-server.example 'systemctl is-active docker amneziawg-firewall; awg show wg0 listen-port'
 ssh root@vpn-server.example 'curl -fsS http://127.0.0.1:51821/api/session'
+# With public mode enabled, also verify the dedicated proxy:
+ssh root@vpn-server.example 'systemctl is-active amneziawg-proxy && nginx -t -c /etc/amneziawg-nginx/nginx.conf'
 .venv/bin/ansible-playbook -i inventory.local.yml playbook.yml
 # Stop the deployment and its automatic restart; retain keys and client data:
 .venv/bin/ansible-playbook -i inventory.local.yml rollback.yml
 ```
 
-Rollback stops the container and removes only the managed host firewall rules.
-The renewal cron job may still refresh the retained certificate but cannot start
-the stopped container.
+Rollback stops/disables the managed nginx proxy and container, removes the
+renewal cron job, and removes only the managed host firewall rules. Credentials,
+certificates and VPN client data are retained.
 It leaves installed packages, repositories, module and IP forwarding in place to
 avoid disrupting shared host functionality. Run `playbook.yml` to start again.
 After a failed partial install, inspect which services exist before rollback.

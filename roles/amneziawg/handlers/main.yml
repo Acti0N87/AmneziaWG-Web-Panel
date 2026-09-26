@@ -4,3 +4,14 @@
     name: amneziawg-firewall
     daemon_reload: true
     state: restarted
+
+- name: Reload AmneziaWG proxy
+  ansible.builtin.systemd_service:
+    name: amneziawg-proxy
+    state: reloaded
+
+- name: Restart AmneziaWG proxy
+  ansible.builtin.systemd_service:
+    name: amneziawg-proxy
+    daemon_reload: true
+    state: restarted

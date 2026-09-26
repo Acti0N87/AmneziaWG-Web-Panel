@@ -19,7 +19,7 @@ if [ "${1:-}" = --force ] || ! openssl x509 -checkend 2592000 -noout -in "$tls_d
         -days 365 -sha256 -copy_extensions copy -out "$temporary"
     openssl verify -CAfile "$temporary" "$temporary" >/dev/null
     chmod 0644 "$temporary"
-    # Keep this marker if restart fails, so tomorrow's run retries the reload.
+    # Keep this marker if reload fails, so tomorrow's run retries the reload.
     touch "$tls_dir/restart-required"
     mv -f -- "$temporary" "$tls_dir/cert.pem"
     temporary=''
@@ -27,11 +27,11 @@ if [ "${1:-}" = --force ] || ! openssl x509 -checkend 2592000 -noout -in "$tls_d
 fi
 
 if [ -f "$tls_dir/restart-required" ]; then
-    running=$(docker inspect --format '{% raw %}{{.State.Running}}{% endraw %}' amnezia-wg-easy)
-    if [ "$running" = true ]; then
-        docker restart amnezia-wg-easy >/dev/null
-        echo 'Restarted running AmneziaWG container to load renewed certificate'
+    if systemctl is-active --quiet amneziawg-proxy; then
+        /usr/sbin/nginx -t -c /etc/amneziawg-nginx/nginx.conf
+        systemctl reload amneziawg-proxy
+        echo 'Reloaded running nginx proxy to load renewed certificate'
     fi
-    # A stopped container will read the new certificate when explicitly started.
+    # A stopped proxy will read the new certificate when explicitly started.
     rm -f -- "$tls_dir/restart-required"
 fi

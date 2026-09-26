@@ -4,6 +4,23 @@
   become: true
   gather_facts: false
   tasks:
+    - name: Inspect services before stopping the proxy
+      ansible.builtin.service_facts:
+
+    - name: Stop proxy and disable automatic startup
+      ansible.builtin.systemd_service:
+        name: amneziawg-proxy
+        state: stopped
+        enabled: false
+      when: "'amneziawg-proxy.service' in ansible_facts.services"
+
+    - name: Remove certificate renewal schedule
+      ansible.builtin.cron:
+        name: AmneziaWG self-signed certificate renewal
+        user: root
+        cron_file: amneziawg-certificate
+        state: absent
+
     - name: Stop VPN container and disable automatic restart
       community.docker.docker_container:
         name: amnezia-wg-easy

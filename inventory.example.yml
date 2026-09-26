@@ -7,5 +7,5 @@ all:
           ansible_host: vpn-server.example
           ansible_user: root
           amneziawg_ui_public: false
-          amneziawg_ui_port: 51821
-          amneziawg_tls_enabled: false
+          amneziawg_nginx_port: 80
+          amneziawg_nginx_tls_enabled: false
