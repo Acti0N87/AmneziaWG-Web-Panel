@@ -5,8 +5,11 @@
       - ca-certificates
       - gnupg
       - curl
+      - cron
+      - openssl
       - iptables
       - python3-bcrypt
+      - python3-cryptography
       - "linux-headers-{{ ansible_facts['kernel'] }}"
     state: present
     update_cache: true

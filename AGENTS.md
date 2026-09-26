@@ -10,10 +10,19 @@
 - Check mode is preflight only; validate actual runtime and second-run idempotency.
 - Never log passwords, bcrypt hashes, Docker environment or WireGuard configs.
   Keep secret-bearing Ansible tasks under `no_log: true`.
-- Default to loopback. Public HTTP access is explicitly controlled by
+- Default to loopback. Public access is explicitly controlled by
   `amneziawg_ui_public: true`; keep password authentication enabled in both modes.
   Document that the flag does not enable TLS. Turning it off must remove the
   managed TCP rule and restore loopback binding.
+- TLS is controlled separately by `amneziawg_tls_enabled`. Use the generated
+  certificate as explicit trust for HTTPS checks; never disable validation.
+  Keep TLS keys outside the build context and mount the TLS directory read-only.
+  Certificate changes must restart the running container to load the new files.
+- Custom port and TLS apply only in public mode. When `amneziawg_ui_public` is
+  false, always use plain HTTP on localhost:51821 and remove renewal cron,
+  regardless of stored port/TLS settings. Use effective settings in runtime checks.
+- Daily renewal uses `/etc/cron.d/amneziawg-certificate` and a locked, atomic helper.
+  It must never start a stopped deployment. Disabling TLS removes the cron job.
 - Admin port is `amneziawg_ui_port`, an integer from 1 to 65535 (default 51821).
   Check the new port is free before changing a live deployment; verify both
   the new listener and removal of the old managed port rule.

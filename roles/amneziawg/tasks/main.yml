@@ -17,7 +17,8 @@
       - amneziawg_ui_port >= 1
       - amneziawg_ui_port <= 65535
       - amneziawg_ui_public is boolean
-    fail_msg: Set amneziawg_ui_port to an integer from 1 to 65535 and amneziawg_ui_public to a boolean.
+      - amneziawg_tls_enabled is boolean
+    fail_msg: Set the panel port to an integer from 1 to 65535 and public/TLS settings to booleans.
 
 - name: Inspect installed packages
   ansible.builtin.package_facts:

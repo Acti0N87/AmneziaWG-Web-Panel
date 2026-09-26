@@ -11,6 +11,20 @@
     - "{{ amneziawg_directory }}/wireguard"
     - "{{ amneziawg_directory }}/build"
 
+- name: Configure self-signed TLS
+  ansible.builtin.import_tasks: tls.yml
+  when: amneziawg_tls_active
+
+- name: Manage daily certificate renewal schedule
+  ansible.builtin.cron:
+    name: AmneziaWG self-signed certificate renewal
+    user: root
+    cron_file: amneziawg-certificate
+    minute: '17'
+    hour: '3'
+    job: /usr/local/sbin/amneziawg-renew-certificate 2>&1 | /usr/bin/logger -t amneziawg-tls
+    state: "{{ 'present' if amneziawg_tls_active else 'absent' }}"
+
 - name: Download pinned current AmneziaWG tools source
   ansible.builtin.get_url:
     url: "https://codeload.github.com/amnezia-vpn/amneziawg-tools/tar.gz/{{ amneziawg_tools_commit }}"
@@ -33,13 +47,20 @@
     mode: '0600'
   register: amneziawg_auth_patch
 
+- name: Copy native HTTPS support patch
+  ansible.builtin.copy:
+    src: enable-tls.cjs
+    dest: "{{ amneziawg_directory }}/build/enable-tls.cjs"
+    mode: '0600'
+  register: amneziawg_tls_patch
+
 - name: Build panel image with tools compatible with current kernel module
   community.docker.docker_image_build:
     name: "{{ amneziawg_runtime_image }}"
     path: "{{ amneziawg_directory }}/build"
     rebuild: >-
       {{ 'always' if (amneziawg_tools_archive.changed or amneziawg_dockerfile.changed
-         or amneziawg_auth_patch.changed) else 'never' }}
+         or amneziawg_auth_patch.changed or amneziawg_tls_patch.changed) else 'never' }}
 
 - name: Generate panel credentials once on the server
   ansible.builtin.command:
@@ -91,6 +112,12 @@
 - name: Apply pending firewall changes
   ansible.builtin.meta: flush_handlers
 
+- name: Check pending TLS reload
+  ansible.builtin.stat:
+    path: "{{ amneziawg_directory }}/tls/restart-required"
+  when: amneziawg_tls_active
+  register: amneziawg_tls_pending_reload
+
 - name: Start pinned AmneziaWG panel with configured access
   community.docker.docker_container:
     name: amnezia-wg-easy
@@ -98,16 +125,21 @@
     pull: never
     state: started
     restart_policy: unless-stopped
+    restart: >-
+      {{ amneziawg_tls_active and ((amneziawg_tls_certificate.changed | default(false))
+         or (amneziawg_tls_pending_reload.stat.exists | default(false))) }}
     network_mode: host
     capabilities: [NET_ADMIN]
-    volumes:
-      - "{{ amneziawg_directory }}/wireguard:/etc/wireguard"
+    volumes: >-
+      {{ [amneziawg_directory ~ '/wireguard:/etc/wireguard']
+         + ([amneziawg_directory ~ '/tls:/etc/amneziawg-tls:ro'] if amneziawg_tls_active else []) }}
     env:
       WG_HOST: "{{ amneziawg_host }}"
       WG_DEVICE: "{{ amneziawg_device }}"
       WG_PORT: "{{ amneziawg_port | string }}"
       WEBUI_HOST: "{{ amneziawg_ui_bind_address }}"
-      PORT: "{{ amneziawg_ui_port | string }}"
+      PORT: "{{ amneziawg_ui_effective_port | string }}"
+      TLS_ENABLED: "{{ 'true' if amneziawg_tls_active else 'false' }}"
       PASSWORD_HASH: "{{ amneziawg_password_hash.content | b64decode | trim }}"
       LANG: en
     log_driver: json-file
@@ -128,7 +160,9 @@
 
 - name: Wait for authenticated management API
   ansible.builtin.uri:
-    url: "http://127.0.0.1:{{ amneziawg_ui_port }}/api/session"
+    url: "{{ amneziawg_ui_scheme }}://127.0.0.1:{{ amneziawg_ui_effective_port }}/api/session"
+    ca_path: "{{ (amneziawg_directory ~ '/tls/cert.pem') if amneziawg_tls_active else omit }}"
+    validate_certs: true
     return_content: true
   register: amneziawg_session
   until: amneziawg_session.status == 200
@@ -143,7 +177,9 @@
 
 - name: Verify client API refuses unauthenticated requests
   ansible.builtin.uri:
-    url: "http://127.0.0.1:{{ amneziawg_ui_port }}/api/wireguard/client"
+    url: "{{ amneziawg_ui_scheme }}://127.0.0.1:{{ amneziawg_ui_effective_port }}/api/wireguard/client"
+    ca_path: "{{ (amneziawg_directory ~ '/tls/cert.pem') if amneziawg_tls_active else omit }}"
+    validate_certs: true
     status_code: 401
 
 - name: Verify real panel login and reject an incorrect password
@@ -153,14 +189,21 @@
       - '-c'
       - "{{ lookup('ansible.builtin.file', 'verify-login.py') }}"
       - "{{ amneziawg_directory }}"
-      - "{{ amneziawg_ui_port | string }}"
+      - "{{ amneziawg_ui_effective_port | string }}"
+      - "{{ amneziawg_ui_scheme }}"
   changed_when: false
   no_log: true
 
 - name: Verify panel listens on the configured address
-  ansible.builtin.command: "ss -H -lnt sport = :{{ amneziawg_ui_port }}"
+  ansible.builtin.command: "ss -H -lnt sport = :{{ amneziawg_ui_effective_port }}"
   register: amneziawg_listener
   changed_when: false
   failed_when: >-
     amneziawg_listener.stdout_lines | length != 1 or
-    amneziawg_listener.stdout.split()[3] != (amneziawg_ui_bind_address ~ ':' ~ (amneziawg_ui_port | string))
+    amneziawg_listener.stdout.split()[3] != (amneziawg_ui_bind_address ~ ':' ~ (amneziawg_ui_effective_port | string))
+
+- name: Clear pending TLS reload after successful verification
+  ansible.builtin.file:
+    path: "{{ amneziawg_directory }}/tls/restart-required"
+    state: absent
+  when: amneziawg_tls_active

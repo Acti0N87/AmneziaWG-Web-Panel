@@ -1,0 +1,90 @@
+---
+- name: Create private TLS directory outside the image build context
+  ansible.builtin.file:
+    path: "{{ amneziawg_directory }}/tls"
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+
+- name: Generate persistent server TLS key
+  community.crypto.openssl_privatekey:
+    path: "{{ amneziawg_directory }}/tls/key.pem"
+    type: RSA
+    size: 3072
+    owner: root
+    group: root
+    mode: '0600'
+  no_log: true
+
+- name: Create certificate request for endpoint and local verification
+  community.crypto.openssl_csr:
+    path: "{{ amneziawg_directory }}/tls/request.pem"
+    privatekey_path: "{{ amneziawg_directory }}/tls/key.pem"
+    common_name: AmneziaWG admin panel
+    use_common_name_for_san: false
+    subject_alt_name:
+      - IP:127.0.0.1
+      - DNS:localhost
+      - >-
+        {{ 'IP:' if (':' in amneziawg_host or amneziawg_host is match('^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'))
+           else 'DNS:' }}{{ amneziawg_host }}
+    basic_constraints: ['CA:FALSE']
+    basic_constraints_critical: true
+    key_usage: [digitalSignature, keyEncipherment]
+    extended_key_usage: [serverAuth]
+    mode: '0600'
+  no_log: true
+
+- name: Inspect existing TLS certificate presence
+  ansible.builtin.stat:
+    path: "{{ amneziawg_directory }}/tls/cert.pem"
+  register: amneziawg_tls_certificate_file
+
+- name: Check certificate renewal window
+  community.crypto.x509_certificate_info:
+    path: "{{ amneziawg_directory }}/tls/cert.pem"
+    valid_at:
+      renewal: '+30d'
+  when: amneziawg_tls_certificate_file.stat.exists
+  register: amneziawg_tls_certificate_info
+  no_log: true
+
+- name: Issue or renew self-signed certificate
+  community.crypto.x509_certificate:
+    path: "{{ amneziawg_directory }}/tls/cert.pem"
+    privatekey_path: "{{ amneziawg_directory }}/tls/key.pem"
+    csr_path: "{{ amneziawg_directory }}/tls/request.pem"
+    provider: selfsigned
+    selfsigned_not_before: '-5m'
+    selfsigned_not_after: '+365d'
+    ignore_timestamps: true
+    force: "{{ not (amneziawg_tls_certificate_info.valid_at.renewal | default(false)) }}"
+    owner: root
+    group: root
+    mode: '0644'
+  register: amneziawg_tls_certificate
+  no_log: true
+
+- name: Persist pending TLS reload across interrupted deployments
+  ansible.builtin.copy:
+    dest: "{{ amneziawg_directory }}/tls/restart-required"
+    content: ''
+    force: false
+    mode: '0600'
+  # This must be persisted immediately, even if a later image build fails.
+  when: amneziawg_tls_certificate.changed # noqa: no-handler
+
+- name: Install certificate renewal helper
+  ansible.builtin.template:
+    src: renew-certificate.sh.j2
+    dest: /usr/local/sbin/amneziawg-renew-certificate
+    owner: root
+    group: root
+    mode: '0700'
+
+- name: Enable cron for unattended renewal
+  ansible.builtin.systemd_service:
+    name: cron
+    enabled: true
+    state: started

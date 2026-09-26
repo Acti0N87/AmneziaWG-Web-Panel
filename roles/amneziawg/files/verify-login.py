@@ -3,14 +3,19 @@ import http.cookiejar
 import json
 from pathlib import Path
 import sys
+import ssl
 import urllib.error
 import urllib.request
 
-base = f"http://127.0.0.1:{int(sys.argv[2])}"
+scheme = sys.argv[3] if len(sys.argv) > 3 else 'http'
+base = f"{scheme}://127.0.0.1:{int(sys.argv[2])}"
 password = (Path(sys.argv[1]) / "password.txt").read_text().strip()
-client = urllib.request.build_opener(
-    urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar())
-)
+cookies = http.cookiejar.CookieJar()
+handlers = [urllib.request.HTTPCookieProcessor(cookies)]
+if scheme == 'https':
+    context = ssl.create_default_context(cafile=str(Path(sys.argv[1]) / 'tls/cert.pem'))
+    handlers.append(urllib.request.HTTPSHandler(context=context))
+client = urllib.request.build_opener(*handlers)
 
 
 def login(value):
@@ -30,6 +35,8 @@ else:
 
 with login(password) as response:
     assert json.load(response)["success"] is True
+if scheme == 'https':
+    assert cookies and all(cookie.secure for cookie in cookies), "Session cookie must be Secure"
 with client.open(base + "/api/session", timeout=10) as response:
     assert json.load(response)["authenticated"] is True
 with client.open(base + "/api/wireguard/client", timeout=10) as response:

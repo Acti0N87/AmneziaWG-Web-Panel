@@ -1,0 +1,37 @@
+#!/bin/bash
+set -euo pipefail
+umask 077
+tls_dir={{ (amneziawg_directory ~ '/tls') | quote }}
+case "${1:-}" in
+    ''|--force) ;;
+    *) echo 'Usage: amneziawg-renew-certificate [--force]' >&2; exit 2 ;;
+esac
+
+# Serialize cron/manual renewals. All files stay outside the Docker build context.
+exec 9>"$tls_dir/renew.lock"
+flock -n 9 || exit 0
+temporary=''
+trap 'test -z "$temporary" || rm -f -- "$temporary"' EXIT
+
+if [ "${1:-}" = --force ] || ! openssl x509 -checkend 2592000 -noout -in "$tls_dir/cert.pem" >/dev/null; then
+    temporary=$(mktemp "$tls_dir/cert.XXXXXX")
+    openssl x509 -req -in "$tls_dir/request.pem" -signkey "$tls_dir/key.pem" \
+        -days 365 -sha256 -copy_extensions copy -out "$temporary"
+    openssl verify -CAfile "$temporary" "$temporary" >/dev/null
+    chmod 0644 "$temporary"
+    # Keep this marker if restart fails, so tomorrow's run retries the reload.
+    touch "$tls_dir/restart-required"
+    mv -f -- "$temporary" "$tls_dir/cert.pem"
+    temporary=''
+    echo 'Renewed self-signed AmneziaWG certificate for 365 days'
+fi
+
+if [ -f "$tls_dir/restart-required" ]; then
+    running=$(docker inspect --format '{% raw %}{{.State.Running}}{% endraw %}' amnezia-wg-easy)
+    if [ "$running" = true ]; then
+        docker restart amnezia-wg-easy >/dev/null
+        echo 'Restarted running AmneziaWG container to load renewed certificate'
+    fi
+    # A stopped container will read the new certificate when explicitly started.
+    rm -f -- "$tls_dir/restart-required"
+fi
