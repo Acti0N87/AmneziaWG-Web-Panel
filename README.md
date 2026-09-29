@@ -43,8 +43,9 @@ sudo dnf install -y python3 python3-pip git openssh-clients
 Then clone the repository and create the virtual environment:
 
 ```sh
-git clone git@github.com:Leonorus/ansible-amnesiaWG.git
-cd ansible-amnesiaWG
+git clone git@github.com:Acti0N87/AmneziaWG-Web-Panel
+.git
+cd AmneziaWG-Web-Panel
 python3 --version
 python3 -m venv .venv
 ```
@@ -91,8 +92,7 @@ ssh root@vpn-server.example true
 .venv/bin/ansible-lint
 .venv/bin/python -m unittest discover -s tests -v
 .venv/bin/ansible-playbook playbook.yml --syntax-check
-.venv/bin/ansible-playbook -i inventory.local.yml playbook.yml --check --diff
-.venv/bin/ansible-playbook -i inventory.local.yml playbook.yml
+.venv/bin/ansible-playbook -i inventory.local.yml playbook.yml --check --diff -k -K
 ```
 
 SSH host-key checking stays enabled. Verify the server fingerprint when first
