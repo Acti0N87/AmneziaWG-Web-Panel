@@ -30,8 +30,7 @@ The controller needs Python 3.12 or newer for the pinned Ansible version.
 On Ubuntu 24.04 or a recent Debian release with Python 3.12+:
 
 ```sh
-sudo apt-get update
-sudo apt-get install -y python3 python3-venv python3-pip git openssh-client
+sudo apt update && sudo apt install -y python3 python3-venv python3-pip git openssh-client
 ```
 
 On a current Fedora release:
