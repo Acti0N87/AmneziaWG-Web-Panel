@@ -19,8 +19,8 @@ Install [Homebrew](https://brew.sh/) if needed, then run:
 
 ```sh
 brew install python@3.12 git
-git clone git@github.com:Leonorus/ansible-amnesiaWG.git
-cd ansible-amnesiaWG
+git clone https://github.com/Acti0N87/AmneziaWG-Web-Panel.git
+cd AmneziaWG-Web-Panel
 python3.12 -m venv .venv
 ```
 
