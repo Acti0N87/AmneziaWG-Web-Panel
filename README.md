@@ -19,7 +19,7 @@ Install [Homebrew](https://brew.sh/) if needed, then run:
 
 ```sh
 brew install python@3.12 git
-git clone https://github.com/Acti0N87/AmneziaWG-Web-Panel.git
+git clone https://github.com/Ai0N4/AmneziaWG-Web-Panel.git
 cd AmneziaWG-Web-Panel
 python3.12 -m venv .venv
 ```
@@ -42,7 +42,7 @@ sudo dnf install -y python3 python3-pip git openssh-clients
 Then clone the repository and create the virtual environment:
 
 ```sh
-git clone https://github.com/Acti0N87/AmneziaWG-Web-Panel.git
+git clone https://github.com/Ai0N4/AmneziaWG-Web-Panel.git
 .git
 cd AmneziaWG-Web-Panel
 python3 --version
