@@ -43,7 +43,7 @@ sudo dnf install -y python3 python3-pip git openssh-clients
 Then clone the repository and create the virtual environment:
 
 ```sh
-git clone git@github.com:Acti0N87/AmneziaWG-Web-Panel
+git clone https://github.com/Acti0N87/AmneziaWG-Web-Panel.git
 .git
 cd AmneziaWG-Web-Panel
 python3 --version
