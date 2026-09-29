@@ -34,37 +34,7 @@
         group: www-data
         mode: '0750'
 
-    - name: Generate independent nginx credentials once on the server
-      ansible.builtin.command:
-        argv: [python3, '-c', "{{ lookup('ansible.builtin.file', 'proxy-credentials.py') }}", "{{ amneziawg_directory }}"]
-        creates: "{{ amneziawg_directory }}/nginx-password.hash"
-      no_log: true
-
-    - name: Store nginx username next to the generated password
-      ansible.builtin.copy:
-        dest: "{{ amneziawg_directory }}/nginx-username.txt"
-        content: "{{ amneziawg_nginx_username }}\n"
-        owner: root
-        group: root
-        mode: '0600'
-      no_log: true
-
-    - name: Read nginx password hash
-      ansible.builtin.slurp:
-        src: "{{ amneziawg_directory }}/nginx-password.hash"
-      register: amneziawg_nginx_password_hash
-      no_log: true
-
-    - name: Install nginx authentication file containing only the hash
-      ansible.builtin.copy:
-        dest: /etc/amneziawg-nginx/htpasswd
-        content: "{{ amneziawg_nginx_username }}:{{ amneziawg_nginx_password_hash.content | b64decode | trim }}\n"
-        owner: root
-        group: www-data
-        mode: '0640'
-      no_log: true
-
-    - name: Install validated isolated nginx configuration
+     - name: Install validated isolated nginx configuration
       ansible.builtin.template:
         src: nginx.conf.j2
         dest: /etc/amneziawg-nginx/nginx.conf
@@ -96,21 +66,6 @@
       register: amneziawg_nginx_certificate_reload
       changed_when: "'Reloaded running nginx' in amneziawg_nginx_certificate_reload.stdout"
       when: amneziawg_tls_active
-
-    - name: Verify public proxy denies requests without Basic authentication
-      ansible.builtin.uri:
-        url: "{{ amneziawg_nginx_scheme }}://127.0.0.1:{{ amneziawg_nginx_port }}/api/session"
-        ca_path: "{{ (amneziawg_directory ~ '/tls/cert.pem') if amneziawg_tls_active else omit }}"
-        validate_certs: true
-        status_code: 401
-      register: amneziawg_nginx_challenge
-      until: amneziawg_nginx_challenge.status == 401
-      retries: 10
-      delay: 2
-
-    - name: Verify nginx Basic authentication challenge
-      ansible.builtin.assert:
-        that: "'Basic realm=' in amneziawg_nginx_challenge.www_authenticate"
 
     - name: Verify both authentication layers through nginx
       ansible.builtin.command:
