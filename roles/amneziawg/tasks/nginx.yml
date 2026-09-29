@@ -34,7 +34,7 @@
         group: www-data
         mode: '0750'
 
-     - name: Install validated isolated nginx configuration
+    - name: Install validated isolated nginx configuration
       ansible.builtin.template:
         src: nginx.conf.j2
         dest: /etc/amneziawg-nginx/nginx.conf
@@ -79,7 +79,7 @@
           - proxy
           - "{{ amneziawg_port | string }}"
       changed_when: false
-      no_log: true
+      no_log: false
 
     - name: Verify nginx listens on the public port
       ansible.builtin.command: "ss -H -lnt sport = :{{ amneziawg_nginx_port }}"
